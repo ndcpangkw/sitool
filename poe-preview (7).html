@@ -1,0 +1,759 @@
+<!DOCTYPE html><html lang="zh-TW"><head><meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; frame-src 'self' https://www.youtube.com https://trytako.com; child-src 'self'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests; block-all-mixed-content;">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生實驗數據預測工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ml-regression@5.0.0/dist/ml-regression.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            light: '#0057B8',
+                            DEFAULT: '#003366',
+                            dark: '#002347'
+                        },
+                        secondary: {
+                            light: '#6BBBFF',
+                            DEFAULT: '#3498db',
+                            dark: '#2980b9'
+                        },
+                        accent: '#F39C12'
+                    },
+                    boxShadow: {
+                        'smooth': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                        'card': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                    }
+                }
+            }
+        }
+        
+        // 檢測暗模式偏好
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 min-h-screen">
+    <style>
+        /* 客製化樣式 */
+        .science-bg {
+            background-image: url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%239C92AC" fill-opacity="0.05"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');
+        }
+        .card {
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 51, 102, 0.1), 0 2px 4px -1px rgba(0, 51, 102, 0.06);
+        }
+        .card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 51, 102, 0.2), 0 4px 6px -2px rgba(0, 51, 102, 0.1);
+            transform: translateY(-2px);
+        }
+        .btn-primary {
+            background-color: #003366;
+            transition: all 0.2s ease;
+        }
+        .btn-primary:hover {
+            background-color: #0057B8;
+            transform: translateY(-1px);
+        }
+        /* 數據輸入區塊強化效果 */
+        .data-input-container {
+            background: linear-gradient(to right, rgba(0, 51, 102, 0.05), transparent);
+            border-left: 3px solid #003366;
+        }
+        /* 實驗類型卡片 */
+        .experiment-card {
+            border-top: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .experiment-card:hover {
+            border-top-color: #003366;
+        }
+        .experiment-card.active {
+            border-top-color: #003366;
+            background-color: rgba(0, 51, 102, 0.05);
+        }
+        /* 表單元素美化 */
+        input, select {
+            transition: all 0.2s ease;
+            border-color: #d1d5db;
+        }
+        input:focus, select:focus {
+            border-color: #003366;
+            box-shadow: 0 0 0 3px rgba(0, 51, 102, 0.2);
+            outline: none;
+        }
+        .dark input:focus, .dark select:focus {
+            border-color: #0057B8;
+            box-shadow: 0 0 0 3px rgba(0, 87, 184, 0.2);
+        }
+    </style>
+    <div class="container mx-auto px-4 py-8 max-w-5xl science-bg">
+        <header class="mb-8 text-center">
+            <div class="inline-block p-2 mb-3 bg-primary bg-opacity-10 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 14l6-6m0 0l-6-6"></path>
+                </svg>
+            </div>
+            <h1 class="text-3xl font-bold text-primary mb-2">學生實驗數據預測工具</h1>
+            <p class="text-gray-600 dark:text-gray-400">輔助學生進行實驗設計、數據分析與結果預測</p>
+        </header>
+
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-card p-6 mb-8 card">
+            <h2 class="text-xl font-bold mb-4 text-primary border-b border-gray-200 dark:border-gray-700 pb-2">選擇實驗類型</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <button class="experiment-type experiment-card p-4 border rounded-lg hover:bg-primary hover:text-white transition-colors dark:border-gray-700 dark:hover:bg-primary" data-type="physics" data-template="pendulum">
+                    <div class="text-primary mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </div>
+                    <h3 class="font-bold">物理：單擺周期</h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">測量單擺長度與周期關係</p>
+                </button>
+                <button class="experiment-type experiment-card p-4 border rounded-lg hover:bg-primary hover:text-white transition-colors dark:border-gray-700 dark:hover:bg-primary" data-type="chemistry" data-template="reaction-rate">
+                    <div class="text-primary mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="font-bold">化學：反應速率</h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">測量溫度對反應速率的影響</p>
+                </button>
+                <button class="experiment-type experiment-card p-4 border rounded-lg hover:bg-primary hover:text-white transition-colors dark:border-gray-700 dark:hover:bg-primary" data-type="biology" data-template="plant-growth">
+                    <div class="text-primary mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 7v7M9 10h6"></path>
+                        </svg>
+                    </div>
+                    <h3 class="font-bold">生物：植物生長</h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">測量光照對植物生長的影響</p>
+                </button>
+            </div>
+            
+            <div class="mb-6">
+                <label for="custom-experiment" class="block mb-2 font-medium">自定義實驗</label>
+                <input type="text" id="custom-experiment" class="w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600" placeholder="輸入實驗名稱...">
+            </div>
+        </div>
+
+        <div id="experiment-setup" class="bg-white dark:bg-gray-800 rounded-lg shadow-card p-6 mb-8 hidden card">
+            <h2 class="text-xl font-bold mb-4 text-primary border-b border-gray-200 dark:border-gray-700 pb-2">實驗設置</h2>
+            <div id="experiment-description" class="mb-6 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                <p>請選擇實驗類型以查看說明</p>
+            </div>
+            
+            <div class="mb-6">
+                <h3 class="font-bold mb-2">輸入數據</h3>
+                <div class="flex mb-4">
+                    <button id="manual-input-btn" class="px-4 py-2 bg-primary text-white rounded-lg mr-2 btn-primary">手動輸入</button>
+                    <button id="upload-btn" class="px-4 py-2 border border-primary text-primary rounded-lg dark:border-primary hover:bg-primary hover:bg-opacity-10 transition-colors">上傳CSV檔案</button>
+                    <input type="file" id="file-upload" class="hidden" accept=".csv">
+                </div>
+                
+                <div id="manual-input-container" class="hidden">
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="x-label" class="block mb-1">自變量名稱 (X)</label>
+                            <input type="text" id="x-label" class="w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600" placeholder="例如: 長度(cm)">
+                        </div>
+                        <div>
+                            <label for="y-label" class="block mb-1">因變量名稱 (Y)</label>
+                            <input type="text" id="y-label" class="w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600" placeholder="例如: 周期(s)">
+                        </div>
+                    </div>
+                    
+                    <div id="data-pairs" class="mb-4">
+                        <div class="data-row grid grid-cols-2 gap-4 mb-2">
+                            <input type="number" class="x-value w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600" placeholder="X值">
+                            <input type="number" class="y-value w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600" placeholder="Y值">
+                        </div>
+                    </div>
+                    
+                    <button id="add-row-btn" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg mb-4 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">+ 添加數據點</button>
+                </div>
+            </div>
+            
+            <div class="mb-6">
+                <h3 class="font-bold mb-2">選擇分析模型</h3>
+                <select id="model-select" class="w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600">
+                    <option value="linear">線性回歸</option>
+                    <option value="polynomial">多項式回歸</option>
+                    <option value="exponential">指數回歸</option>
+                    <option value="logarithmic">對數回歸</option>
+                </select>
+                
+                <div id="polynomial-degree-container" class="mt-2 hidden">
+                    <label for="polynomial-degree" class="block mb-1">多項式次數</label>
+                    <input type="number" id="polynomial-degree" class="w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600" min="2" max="5" value="2">
+                </div>
+            </div>
+            
+            <button id="analyze-btn" class="px-6 py-2 bg-primary text-white rounded-lg btn-primary">分析數據</button>
+        </div>
+
+        <div id="results-container" class="bg-white dark:bg-gray-800 rounded-lg shadow-card p-6 mb-8 hidden card">
+            <h2 class="text-xl font-bold mb-4 text-primary border-b border-gray-200 dark:border-gray-700 pb-2">分析結果</h2>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="font-bold mb-2">數據視覺化</h3>
+                    <div class="bg-white dark:bg-gray-700 p-4 rounded-lg">
+                        <canvas id="data-chart" width="400" height="300"></canvas>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="font-bold mb-2">預測結果</h3>
+                    <div id="model-equation" class="mb-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <p class="font-mono">等待分析...</p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="prediction-input" class="block mb-1">預測新值</label>
+                        <div class="flex">
+                            <input type="number" id="prediction-input" class="flex-1 px-4 py-2 border rounded-l-lg text-base dark:bg-gray-700 dark:border-gray-600" placeholder="輸入X值">
+                            <button id="predict-btn" class="px-4 py-2 bg-primary text-white rounded-r-lg btn-primary">預測</button>
+                        </div>
+                    </div>
+                    
+                    <div id="prediction-result" class="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg hidden">
+                        <p>預測值: <span id="predicted-value" class="font-bold"></span></p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-6">
+                <h3 class="font-bold mb-2">統計資訊</h3>
+                <div id="statistics" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <p class="text-sm text-gray-600 dark:text-gray-400">決定係數 (R²)</p>
+                        <p id="r-squared" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <p class="text-sm text-gray-600 dark:text-gray-400">均方誤差 (MSE)</p>
+                        <p id="mse" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <p class="text-sm text-gray-600 dark:text-gray-400">資料點數量</p>
+                        <p id="data-points" class="text-xl font-bold">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="guidance-container" class="bg-white dark:bg-gray-800 rounded-lg shadow-card p-6 mb-8 card">
+            <h2 class="text-xl font-bold mb-4 text-primary border-b border-gray-200 dark:border-gray-700 pb-2">實驗指南</h2>
+            <div class="mb-6">
+                <h3 class="font-bold mb-2">基本科學方法</h3>
+                <ol class="list-decimal list-inside pl-4 space-y-2">
+                    <li>提出問題和假設</li>
+                    <li>設計實驗以測試假設</li>
+                    <li>收集和分析實驗數據</li>
+                    <li>得出結論，評估假設是否被支持</li>
+                    <li>檢視結果，提出新問題或改進實驗設計</li>
+                </ol>
+            </div>
+            
+            <div class="mb-6">
+                <h3 class="font-bold mb-2">實驗設計建議</h3>
+                <ul class="list-disc list-inside pl-4 space-y-2">
+                    <li>控制變量：確保每次只改變一個變量</li>
+                    <li>重複測量：每個數據點至少測量3次取平均值</li>
+                    <li>適當樣本量：對於線性關係，建議至少5-7個數據點</li>
+                    <li>適當範圍：覆蓋足夠寬的自變量範圍</li>
+                </ul>
+            </div>
+            
+            <div class="mb-6">
+                <h3 class="font-bold mb-2">數據分析技巧</h3>
+                <ul class="list-disc list-inside pl-4 space-y-2">
+                    <li>觀察數據趨勢，選擇合適的回歸模型</li>
+                    <li>利用R²評估模型擬合程度（越接近1越好）</li>
+                    <li>檢查殘差，確認沒有明顯模式</li>
+                    <li>識別並處理異常值</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 實驗模板庫
+        const experimentTemplates = {
+            "pendulum": {
+                title: "單擺周期實驗",
+                description: "這個實驗旨在研究單擺長度與擺動周期之間的關係。根據物理學理論，單擺的周期T與擺長L的平方根成正比，符合公式 T = 2π√(L/g)，其中g是重力加速度。",
+                xLabel: "擺長 (cm)",
+                yLabel: "周期 (秒)",
+                recommendedModel: "polynomial",
+                degree: 2,
+                sampleData: [
+                    {x: 10, y: 0.64},
+                    {x: 20, y: 0.90},
+                    {x: 30, y: 1.10},
+                    {x: 40, y: 1.27},
+                    {x: 50, y: 1.42},
+                    {x: 60, y: 1.56},
+                    {x: 70, y: 1.68}
+                ]
+            },
+            "reaction-rate": {
+                title: "反應速率與溫度關係實驗",
+                description: "這個實驗探討溫度如何影響化學反應速率。根據阿瑞尼烏斯方程式，反應速率與溫度之間存在指數關係。溫度每升高10°C，反應速率約增加2-4倍。",
+                xLabel: "溫度 (°C)",
+                yLabel: "反應速率 (mol/L·min)",
+                recommendedModel: "exponential",
+                sampleData: [
+                    {x: 10, y: 0.012},
+                    {x: 20, y: 0.025},
+                    {x: 30, y: 0.053},
+                    {x: 40, y: 0.112},
+                    {x: 50, y: 0.236},
+                    {x: 60, y: 0.498}
+                ]
+            },
+            "plant-growth": {
+                title: "光照強度與植物生長實驗",
+                description: "這個實驗研究不同光照強度對植物生長的影響。植物生長率隨光照強度增加而增加，但達到特定強度後，生長率會趨於平緩，呈現對數關係。",
+                xLabel: "光照強度 (lux)",
+                yLabel: "生長高度 (cm)",
+                recommendedModel: "logarithmic",
+                sampleData: [
+                    {x: 500, y: 3.2},
+                    {x: 1000, y: 5.7},
+                    {x: 2000, y: 8.1},
+                    {x: 3000, y: 9.6},
+                    {x: 4000, y: 10.8},
+                    {x: 5000, y: 11.5},
+                    {x: 6000, y: 12.0}
+                ]
+            }
+        };
+
+        // 全局變量
+        let dataChart = null;
+        let currentModel = null;
+        let xValues = [];
+        let yValues = [];
+        let currentXLabel = '';
+        let currentYLabel = '';
+
+        // DOM 元素引用
+        document.addEventListener('DOMContentLoaded', function() {
+            // 實驗類型選擇
+            const experimentButtons = document.querySelectorAll('.experiment-type');
+            experimentButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const type = this.dataset.type;
+                    const template = this.dataset.template;
+                    loadExperimentTemplate(template);
+                    
+                    // 視覺反饋
+                    experimentButtons.forEach(btn => btn.classList.remove('bg-primary', 'text-white'));
+                    this.classList.add('bg-primary', 'text-white');
+                    
+                    // 顯示實驗設置
+                    document.getElementById('experiment-setup').classList.remove('hidden');
+                    document.getElementById('results-container').classList.add('hidden');
+                });
+            });
+            
+            // 自定義實驗輸入
+            document.getElementById('custom-experiment').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    const experimentName = this.value.trim();
+                    if (experimentName) {
+                        document.getElementById('experiment-description').innerHTML = `
+                            <h3 class="font-bold mb-2">${experimentName}</h3>
+                            <p>自定義實驗。請設置數據和選擇適當的分析模型。</p>
+                        `;
+                        document.getElementById('experiment-setup').classList.remove('hidden');
+                        
+                        // 清除已選實驗類型
+                        document.querySelectorAll('.experiment-type').forEach(btn => {
+                            btn.classList.remove('bg-primary', 'text-white');
+                        });
+                    }
+                }
+            });
+            
+            // 數據輸入方式選擇
+            document.getElementById('manual-input-btn').addEventListener('click', function() {
+                document.getElementById('manual-input-container').classList.remove('hidden');
+            });
+            
+            document.getElementById('upload-btn').addEventListener('click', function() {
+                document.getElementById('file-upload').click();
+            });
+            
+            // 文件上傳處理
+            document.getElementById('file-upload').addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    Papa.parse(file, {
+                        header: true,
+                        complete: function(results) {
+                            if (results.data && results.data.length > 0) {
+                                // 假設CSV文件第一列是列名，分別用於X和Y值
+                                const headers = results.meta.fields;
+                                if (headers && headers.length >= 2) {
+                                    // 設置XY標籤
+                                    document.getElementById('x-label').value = headers[0];
+                                    document.getElementById('y-label').value = headers[1];
+                                    
+                                    // 清除舊數據行
+                                    const dataRows = document.querySelectorAll('.data-row');
+                                    for (let i = 1; i < dataRows.length; i++) {
+                                        dataRows[i].remove();
+                                    }
+                                    
+                                    // 設置第一行數據
+                                    document.querySelector('.x-value').value = results.data[0][headers[0]];
+                                    document.querySelector('.y-value').value = results.data[0][headers[1]];
+                                    
+                                    // 添加剩餘數據行
+                                    for (let i = 1; i < results.data.length; i++) {
+                                        if (results.data[i][headers[0]] && results.data[i][headers[1]]) {
+                                            addDataRow(results.data[i][headers[0]], results.data[i][headers[1]]);
+                                        }
+                                    }
+                                    
+                                    document.getElementById('manual-input-container').classList.remove('hidden');
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+            
+            // 添加數據行
+            document.getElementById('add-row-btn').addEventListener('click', addDataRow);
+            
+            // 模型選擇
+            document.getElementById('model-select').addEventListener('change', function() {
+                const modelType = this.value;
+                if (modelType === 'polynomial') {
+                    document.getElementById('polynomial-degree-container').classList.remove('hidden');
+                } else {
+                    document.getElementById('polynomial-degree-container').classList.add('hidden');
+                }
+            });
+            
+            // 分析按鈕
+            document.getElementById('analyze-btn').addEventListener('click', analyzeData);
+            
+            // 預測按鈕
+            document.getElementById('predict-btn').addEventListener('click', predictValue);
+        });
+
+        // 載入實驗模板
+        function loadExperimentTemplate(templateName) {
+            const template = experimentTemplates[templateName];
+            if (!template) return;
+            
+            // 設置實驗說明
+            document.getElementById('experiment-description').innerHTML = `
+                <h3 class="font-bold mb-2">${template.title}</h3>
+                <p>${template.description}</p>
+            `;
+            
+            // 設置標籤
+            document.getElementById('x-label').value = template.xLabel;
+            document.getElementById('y-label').value = template.yLabel;
+            
+            // 清除舊數據行
+            const dataRows = document.querySelectorAll('.data-row');
+            for (let i = 1; i < dataRows.length; i++) {
+                dataRows[i].remove();
+            }
+            
+            // 設置第一行數據
+            if (template.sampleData && template.sampleData.length > 0) {
+                document.querySelector('.x-value').value = template.sampleData[0].x;
+                document.querySelector('.y-value').value = template.sampleData[0].y;
+                
+                // 添加剩餘數據行
+                for (let i = 1; i < template.sampleData.length; i++) {
+                    addDataRow(template.sampleData[i].x, template.sampleData[i].y);
+                }
+            }
+            
+            // 設置建議的模型
+            if (template.recommendedModel) {
+                document.getElementById('model-select').value = template.recommendedModel;
+                
+                if (template.recommendedModel === 'polynomial' && template.degree) {
+                    document.getElementById('polynomial-degree-container').classList.remove('hidden');
+                    document.getElementById('polynomial-degree').value = template.degree;
+                } else {
+                    document.getElementById('polynomial-degree-container').classList.add('hidden');
+                }
+            }
+            
+            document.getElementById('manual-input-container').classList.remove('hidden');
+        }
+
+        // 添加數據行
+        function addDataRow(xValue = '', yValue = '') {
+            const dataRow = document.createElement('div');
+            dataRow.className = 'data-row grid grid-cols-2 gap-4 mb-2';
+            dataRow.innerHTML = `
+                <input type="number" class="x-value w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600" placeholder="X值" value="${xValue}">
+                <input type="number" class="y-value w-full px-4 py-2 border rounded-lg text-base dark:bg-gray-700 dark:border-gray-600" placeholder="Y值" value="${yValue}">
+            `;
+            document.getElementById('data-pairs').appendChild(dataRow);
+        }
+
+        // 收集數據
+        function collectData() {
+            xValues = [];
+            yValues = [];
+            
+            const dataRows = document.querySelectorAll('.data-row');
+            dataRows.forEach(row => {
+                const xInput = row.querySelector('.x-value');
+                const yInput = row.querySelector('.y-value');
+                
+                if (xInput.value !== '' && yInput.value !== '') {
+                    xValues.push(parseFloat(xInput.value));
+                    yValues.push(parseFloat(yInput.value));
+                }
+            });
+            
+            currentXLabel = document.getElementById('x-label').value || 'X';
+            currentYLabel = document.getElementById('y-label').value || 'Y';
+            
+            return xValues.length > 0;
+        }
+
+        // 分析數據
+        function analyzeData() {
+            if (!collectData() || xValues.length < 2) {
+                alert('請至少輸入兩個數據點');
+                return;
+            }
+            
+            const modelType = document.getElementById('model-select').value;
+            
+            try {
+                // 創建回歸模型
+                switch (modelType) {
+                    case 'linear':
+                        currentModel = new MLR.SimpleLinearRegression(xValues, yValues);
+                        break;
+                    case 'polynomial':
+                        const degree = parseInt(document.getElementById('polynomial-degree').value) || 2;
+                        currentModel = new MLR.PolynomialRegression(xValues, yValues, degree);
+                        break;
+                    case 'exponential':
+                        // 對數轉換後的線性回歸
+                        const logY = yValues.map(y => Math.log(y));
+                        const expModel = new MLR.SimpleLinearRegression(xValues, logY);
+                        currentModel = {
+                            predict: function(x) {
+                                return Math.exp(expModel.predict(x));
+                            },
+                            score: function() {
+                                const predictions = xValues.map(x => this.predict(x));
+                                return calculateR2(yValues, predictions);
+                            },
+                            toString: function() {
+                                const a = Math.exp(expModel.intercept);
+                                const b = expModel.slope;
+                                return `y = ${a.toFixed(4)} × e^(${b.toFixed(4)} × x)`;
+                            }
+                        };
+                        break;
+                    case 'logarithmic':
+                        // 對輸入取對數的線性回歸
+                        const logX = xValues.map(x => Math.log(x));
+                        const logModel = new MLR.SimpleLinearRegression(logX, yValues);
+                        currentModel = {
+                            predict: function(x) {
+                                return logModel.predict(Math.log(x));
+                            },
+                            score: function() {
+                                const predictions = xValues.map(x => this.predict(x));
+                                return calculateR2(yValues, predictions);
+                            },
+                            toString: function() {
+                                return `y = ${logModel.slope.toFixed(4)} × ln(x) + ${logModel.intercept.toFixed(4)}`;
+                            }
+                        };
+                        break;
+                }
+                
+                // 顯示結果區域
+                document.getElementById('results-container').classList.remove('hidden');
+                
+                // 更新模型方程
+                document.getElementById('model-equation').innerHTML = `<p class="font-mono">${currentModel.toString()}</p>`;
+                
+                // 更新統計信息
+                const predictions = xValues.map(x => currentModel.predict(x));
+                const r2 = calculateR2(yValues, predictions);
+                const mseValue = calculateMSE(yValues, predictions);
+                
+                document.getElementById('r-squared').textContent = r2.toFixed(4);
+                document.getElementById('mse').textContent = mseValue.toFixed(4);
+                document.getElementById('data-points').textContent = xValues.length;
+                
+                // 繪製圖表
+                createChart();
+            } catch (error) {
+                console.error('分析錯誤:', error);
+                alert('數據分析失敗，請檢查數據或嘗試其他模型');
+            }
+        }
+
+        // 預測新值
+        function predictValue() {
+            if (!currentModel) {
+                alert('請先分析數據');
+                return;
+            }
+            
+            const input = document.getElementById('prediction-input').value;
+            if (input === '') {
+                alert('請輸入預測值');
+                return;
+            }
+            
+            const xValue = parseFloat(input);
+            try {
+                const prediction = currentModel.predict(xValue);
+                document.getElementById('predicted-value').textContent = `${prediction.toFixed(4)} ${currentYLabel.split(' ')[0]}`;
+                document.getElementById('prediction-result').classList.remove('hidden');
+                
+                // 在圖表上標記預測點
+                if (dataChart) {
+                    if (dataChart.data.datasets.length > 2) {
+                        dataChart.data.datasets.pop();
+                    }
+                    
+                    dataChart.data.datasets.push({
+                        label: '預測點',
+                        data: [{x: xValue, y: prediction}],
+                        backgroundColor: 'red',
+                        borderColor: 'red',
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        showLine: false
+                    });
+                    
+                    dataChart.update();
+                }
+            } catch (error) {
+                console.error('預測錯誤:', error);
+                alert('預測失敗，請檢查輸入值');
+            }
+        }
+
+        // 計算決定係數 R²
+        function calculateR2(actual, predicted) {
+            const mean = actual.reduce((sum, value) => sum + value, 0) / actual.length;
+            const ssTotal = actual.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0);
+            const ssResidual = actual.reduce((sum, value, i) => sum + Math.pow(value - predicted[i], 2), 0);
+            return 1 - (ssResidual / ssTotal);
+        }
+
+        // 計算均方誤差 MSE
+        function calculateMSE(actual, predicted) {
+            return actual.reduce((sum, value, i) => sum + Math.pow(value - predicted[i], 2), 0) / actual.length;
+        }
+
+        // 創建圖表
+        function createChart() {
+            const ctx = document.getElementById('data-chart').getContext('2d');
+            
+            // 如果已存在圖表，則銷毀
+            if (dataChart) {
+                dataChart.destroy();
+            }
+            
+            // 準備數據點
+            const dataPoints = xValues.map((x, i) => ({x, y: yValues[i]}));
+            
+            // 生成趨勢線
+            const minX = Math.min(...xValues);
+            const maxX = Math.max(...xValues);
+            const range = maxX - minX;
+            const step = range / 100;
+            
+            const trendPoints = [];
+            for (let x = minX - range * 0.1; x <= maxX + range * 0.1; x += step) {
+                trendPoints.push({x, y: currentModel.predict(x)});
+            }
+            
+            // 創建圖表
+            dataChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: '實驗數據',
+                            data: dataPoints,
+                            backgroundColor: '#003366',
+                            borderColor: '#003366',
+                            pointRadius: 5,
+                            pointHoverRadius: 7
+                        },
+                        {
+                            label: '趨勢線',
+                            data: trendPoints,
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            pointRadius: 0,
+                            showLine: true,
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom',
+                            title: {
+                                display: true,
+                                text: currentXLabel
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: currentYLabel
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `(${context.parsed.x}, ${context.parsed.y})`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+
+
+</body></html>
